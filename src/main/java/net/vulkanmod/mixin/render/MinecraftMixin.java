@@ -67,11 +67,6 @@ public class MinecraftMixin {
     private void removeBlit(RenderTarget instance, int i, int j) {
     }
 
-
-    @Redirect(method = "runTick", at = @At(value = "INVOKE", target = "Ljava/lang/Thread;yield()V"))
-    private void removeThreadYield() {
-    }
-
     @Inject(method = "getFramerateLimit", at = @At("HEAD"), cancellable = true)
     private void limitWhenMinimized(CallbackInfoReturnable<Integer> cir) {
         if(this.noRender) cir.setReturnValue(10);
