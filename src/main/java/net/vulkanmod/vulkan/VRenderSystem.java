@@ -178,6 +178,25 @@ public abstract class VRenderSystem {
         float f3_ = clearColor2[3];
         return f0_!=f0|f1_!=f1|f2_!=f2|f3_!=f3;
     }
+    public static void clearColor(float f0, float f1, float f2, float f3) {
+//        if(f1==1&&f2==1&&f3==1&&f4==1) return; //Test JM Clear Fix
+        //set to true if different colour
+        clearColorUpdate=checkClearisActuallyDifferent(f0, f1, f2, f3);
+        if(!clearColorUpdate) return;
+        ColorUtil.setRGBA_Buffer(clearColor, f0, f1, f2, f3);
+        clearColor2[0]=f0;
+        clearColor2[1]=f1;
+        clearColor2[2]=f2;
+        clearColor2[3]=f3;
+    }
+
+    private static boolean checkClearisActuallyDifferent(float f0, float f1, float f2, float f3) {
+        float f0_ = clearColor2[0];
+        float f1_ = clearColor2[1];
+        float f2_ = clearColor2[2];
+        float f3_ = clearColor2[3];
+        return f0_!=f0&&f1_!=f1&&f2_!=f2&&f3_!=f3;
+    }
 
     public static void clear(int v) {
         //Skip Mods reapplying the same colour over and over per clear
@@ -212,11 +231,11 @@ public abstract class VRenderSystem {
     public static void enableDepthTest() {
         depthTest = true;
     }
-    
+
     public static void enableCull() {
         cull = true;
     }
-    
+
     public static void disableCull() {
         cull = false;
     }
@@ -245,7 +264,7 @@ public abstract class VRenderSystem {
         screenSize.putFloat(0, (float)window.getWidth());
         screenSize.putFloat(4, (float)window.getHeight());
     }
-    
+
     public static void setWindow(long window) {
         VRenderSystem.window = window;
     }
