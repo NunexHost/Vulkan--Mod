@@ -7,7 +7,7 @@ import net.vulkanmod.Initializer;
 import net.vulkanmod.vulkan.*;
 import net.vulkanmod.vulkan.memory.StagingBuffer;
 import net.vulkanmod.vulkan.queue.CommandPool;
-
+import static net.vulkanmod.vulkan.queue.Queue.TransferQueue;
 import org.lwjgl.system.MemoryStack;
 
 import java.nio.ByteBuffer;
@@ -23,8 +23,6 @@ public class AreaUploadManager {
     public static void createInstance() {
         INSTANCE = new AreaUploadManager();
     }
-
-    boolean hasBufferSwap = false;
 
     ObjectArrayList<AreaBuffer.Segment>[] recordedUploads;
     CommandPool.CommandBuffer[] commandBuffers;
@@ -54,50 +52,16 @@ public class AreaUploadManager {
     public synchronized void submitUploads() {
         if (subCopyCommands.isEmpty()) {
             return;
-        }
-        if(commandBuffers[currentFrame] == null)
-            this.commandBuffers[currentFrame] = FakeTransferQueue.beginCommands();
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            FakeTransferQueue.PriorWriteBarrier(this.commandBuffers[currentFrame].getHandle());
 
-            long stagingBufferId = Vulkan.getStagingBuffer().getId();
-            for (long bufferHandle : subCopyCommands.keySet()) {
-                final ObjectArrayFIFOQueue<SubCopyCommand> subCopyCommands1 = subCopyCommands.get(bufferHandle);
-
-                int size = subCopyCommands1.size();
-                VkBufferCopy.Buffer vkBufferCopies = VkBufferCopy.malloc(size, stack);
-
-                for (var a : vkBufferCopies) {
-                    SubCopyCommand subCopyCommand = subCopyCommands1.dequeue();
-                    a.set(subCopyCommand.srcOffset(), subCopyCommand.dstOffset(), subCopyCommand.bufferSize());
-                }
-
-                FakeTransferQueue.uploadBufferCmds(this.commandBuffers[currentFrame], stagingBufferId, bufferHandle, vkBufferCopies);
-            }
-            FakeTransferQueue.UploadCmdWriteBarrier(this.commandBuffers[currentFrame].getHandle(), stack, this.hasBufferSwap);
-            this.hasBufferSwap=false;
-        }
-        subCopyCommands.clear();
-        FakeTransferQueue.submitCommands(this.commandBuffers[currentFrame]);
-
+        TransferQueue.submitCommands(this.commandBuffers[currentFrame]);
     }
-//    public void uploadAsync2(AreaBuffer.Segment uploadSegment, long bufferId, int dstOffset, int bufferSize, long src) {
-//
-//        StagingBuffer stagingBuffer = Vulkan.getStagingBuffer();
-//        stagingBuffer.copyBuffer2(bufferSize, src);
-//
-//
-//        if(!subCopyCommands.containsKey(bufferId))
-//        {
-//            subCopyCommands.put(bufferId, new ObjectArrayFIFOQueue<>(16));
-//        }
-//        subCopyCommands.get(bufferId).enqueue(new SubCopyCommand(stagingBuffer.getOffset(), dstOffset, bufferSize));
-//
-//
-//        this.recordedUploads[this.currentFrame].add(uploadSegment);
-//    }
-    public void uploadAsync(AreaBuffer.Segment uploadSegment, long bufferId, int dstOffset, int bufferSize, ByteBuffer src) {
 
+    public void uploadAsync(AreaBuffer.Segment uploadSegment, long bufferId, long dstOffset, long bufferSize, ByteBuffer src) {
+
+        if(commandBuffers[currentFrame] == null)
+            this.commandBuffers[currentFrame] = TransferQueue.beginCommands();
+
+        VkCommandBuffer commandBuffer = commandBuffers[currentFrame].getHandle();
 
         StagingBuffer stagingBuffer = Vulkan.getStagingBuffer();
         stagingBuffer.copyBuffer(bufferSize, src);

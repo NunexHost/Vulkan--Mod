@@ -1,13 +1,19 @@
 #version 460
-
+layout (constant_id = 0) const bool USE_FOG = true;
 #include "light.glsl"
 
+layout(binding = 0) uniform UniformBufferObject {
+    vec3 dummy;
+};
 
 layout(push_constant) uniform pushConstant {
-    mat4 MVP2;
+    mat4 MVP;
+    mat4 ModelViewMat;
 };
 
 layout(binding = 3) uniform sampler2D Sampler2;
+
+
 
 
 layout(location = 0) out vec4 vertexColor;
@@ -23,16 +29,14 @@ layout(location = 3) in ivec2 UV2;
 
 const float UV_INV = 1.0 / 65536.0;
 const vec3 POSITION_INV = vec3(1.0 / 1900.0);
+const vec3 POSITION_INV = vec3(1.0 / 1900.0);
 
 void main() {
     const vec3 baseOffset = bitfieldExtract(ivec3(gl_InstanceIndex)>> ivec3(0, 16, 8), 0, 8);
     const vec3 pos = fma(Position, vec3(POSITION_INV), baseOffset);
-    const vec4 a = vec4(pos, 1);
-    gl_Position = MVP2 * a;
-
-
-
-
+    const vec4 xyz = vec4(pos, 1);
+    gl_Position = MVP * xyz;
+    vertexDistance = USE_FOG ? length((ModelViewMat * xyz).xyz) : 0.0f; //Optimised out by Driver
     vertexColor = Color * sample_lightmap(Sampler2, UV2);
     texCoord0 = UV0 * UV_INV;
 //    normal = MVP * vec4(Normal, 0.0);

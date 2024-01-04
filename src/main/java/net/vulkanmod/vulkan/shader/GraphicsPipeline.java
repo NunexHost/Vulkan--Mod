@@ -3,6 +3,7 @@ package net.vulkanmod.vulkan.shader;
 import com.google.common.collect.ImmutableList;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
+import net.vulkanmod.Initializer;
 import net.vulkanmod.interfaces.VertexFormatMixed;
 import net.vulkanmod.vulkan.DeviceManager;
 import net.vulkanmod.vulkan.Renderer;
@@ -15,6 +16,7 @@ import java.nio.LongBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
+import static java.lang.Boolean.FALSE;
 import static net.vulkanmod.vulkan.shader.PipelineState.*;
 import static net.vulkanmod.vulkan.shader.PipelineState.DEFAULT_COLORMASK;
 import static org.lwjgl.system.MemoryStack.stackGet;
@@ -29,6 +31,7 @@ public class GraphicsPipeline extends Pipeline {
 
     private long vertShaderModule = 0;
     private long fragShaderModule = 0;
+    private PipelineState state;
 
     GraphicsPipeline(Builder builder) {
         super(builder.shaderPath);
@@ -42,9 +45,11 @@ public class GraphicsPipeline extends Pipeline {
         createPipelineLayout();
         createShaderModules(builder.vertShaderSPIRV, builder.fragShaderSPIRV);
 
-        if(builder.renderPass != null)
-            graphicsPipelines.computeIfAbsent(new PipelineState(DEFAULT_BLEND_STATE, DEFAULT_DEPTH_STATE, DEFAULT_LOGICOP_STATE, DEFAULT_COLORMASK, builder.renderPass),
+        if(builder.renderPass != null) {
+            this.state = new PipelineState(DEFAULT_BLEND_STATE, DEFAULT_DEPTH_STATE, DEFAULT_LOGICOP_STATE, DEFAULT_COLORMASK, builder.renderPass);
+            graphicsPipelines.computeIfAbsent(state,
                     this::createGraphicsPipeline);
+        }
 
         createDescriptorSets(Renderer.getFramesNum());
 
@@ -56,26 +61,35 @@ public class GraphicsPipeline extends Pipeline {
     }
 
     private long createGraphicsPipeline(PipelineState state) {
-
+        this.state=state;
         try(MemoryStack stack = stackPush()) {
 
             ByteBuffer entryPoint = stack.UTF8("main");
 
             VkPipelineShaderStageCreateInfo.Buffer shaderStages = VkPipelineShaderStageCreateInfo.calloc(2, stack);
 
-            VkPipelineShaderStageCreateInfo vertShaderStageInfo = shaderStages.get(0);
 
-            vertShaderStageInfo.sType(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);
-            vertShaderStageInfo.stage(VK_SHADER_STAGE_VERTEX_BIT);
-            vertShaderStageInfo.module(vertShaderModule);
-            vertShaderStageInfo.pName(entryPoint);
+            boolean equals = this.name.equals("basic/terrain/terrain")||this.name.equals("minecraft/core/rendertype_entity_cutout_no_cull/rendertype_entity_cutout_no_cull");
+            VkSpecializationInfo vkSpecializationInfo = equals ? VkSpecializationInfo.malloc(stack)
+                        .pMapEntries(VkSpecializationMapEntry.malloc(1, stack).constantID(0).offset(0).size(1))
+                        .pData(stack.bytes((byte) (Initializer.CONFIG.renderFog ? 1 : 0))) : null;
 
-            VkPipelineShaderStageCreateInfo fragShaderStageInfo = shaderStages.get(1);
 
-            fragShaderStageInfo.sType(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);
-            fragShaderStageInfo.stage(VK_SHADER_STAGE_FRAGMENT_BIT);
-            fragShaderStageInfo.module(fragShaderModule);
-            fragShaderStageInfo.pName(entryPoint);
+            shaderStages.get(0)
+                    .sType(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO)
+                    .pNext(0)
+                    .stage(VK_SHADER_STAGE_VERTEX_BIT)
+                    .module(vertShaderModule)
+                    .pName(entryPoint)
+                    .pSpecializationInfo(vkSpecializationInfo);
+
+            shaderStages.get(1)
+                    .sType(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO)
+                    .pNext(0)
+                    .stage(VK_SHADER_STAGE_FRAGMENT_BIT)
+                    .module(fragShaderModule)
+                    .pName(entryPoint)
+                    .pSpecializationInfo(vkSpecializationInfo);
 
             // ===> VERTEX STAGE <===
 
@@ -108,10 +122,7 @@ public class GraphicsPipeline extends Pipeline {
             rasterizer.polygonMode(VK_POLYGON_MODE_FILL);
             rasterizer.lineWidth(1.0f);
 
-            if(state.cullState)
-                rasterizer.cullMode(VK_CULL_MODE_BACK_BIT);
-            else
-                rasterizer.cullMode(VK_CULL_MODE_NONE);
+            rasterizer.cullMode(state.cullState ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE);
 
             rasterizer.frontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
             rasterizer.depthBiasEnable(true);
@@ -246,96 +257,55 @@ public class GraphicsPipeline extends Pipeline {
             int elementCount = formatElement.getCount();
 
             switch (usage) {
-                case POSITION :
-                    if(type == VertexFormatElement.Type.FLOAT) {
-                        posDescription.format(VK_FORMAT_R32G32B32_SFLOAT);
-                        posDescription.offset(offset);
-
-                        offset += 12;
+                case POSITION -> {
+                    switch (type) {
+                        case FLOAT -> posDescription.format(VK_FORMAT_R32G32B32_SFLOAT);
+                        case SHORT -> posDescription.format(VK_FORMAT_R16G16B16A16_SINT);
+                        case BYTE -> posDescription.format(VK_FORMAT_R8G8B8A8_SINT);
                     }
-                    else if (type == VertexFormatElement.Type.SHORT) {
-                        posDescription.format(VK_FORMAT_R16G16B16A16_SINT);
-                        posDescription.offset(offset);
-
-                        offset += 8;
+                }
+                case COLOR -> posDescription.format(VK_FORMAT_R8G8B8A8_UNORM);
+                case UV -> {
+                    switch (type) {
+                        case FLOAT -> posDescription.format(VK_FORMAT_R32G32_SFLOAT);
+                        case SHORT -> posDescription.format(VK_FORMAT_R16G16_SINT);
+                        case USHORT -> posDescription.format(VK_FORMAT_R16G16_UINT);
                     }
-                    else if (type == VertexFormatElement.Type.BYTE) {
-                        posDescription.format(VK_FORMAT_R8G8B8A8_SINT);
-                        posDescription.offset(offset);
-
-                        offset += 4;
-                    }
-
-                    break;
-
-                case COLOR:
-                    posDescription.format(VK_FORMAT_R8G8B8A8_UNORM);
-                    posDescription.offset(offset);
-
-//                offset += 16;
-                    offset += 4;
-                    break;
-
-                case UV:
-                    if(type == VertexFormatElement.Type.FLOAT){
-                        posDescription.format(VK_FORMAT_R32G32_SFLOAT);
-                        posDescription.offset(offset);
-
-                        offset += 8;
-                    }
-                    else if(type == VertexFormatElement.Type.SHORT){
-                        posDescription.format(VK_FORMAT_R16G16_SINT);
-                        posDescription.offset(offset);
-
-                        offset += 4;
-                    }
-                    else if(type == VertexFormatElement.Type.USHORT){
-                        posDescription.format(VK_FORMAT_R16G16_UINT);
-                        posDescription.offset(offset);
-
-                        offset += 4;
-                    }
-                    break;
-
-                case NORMAL:
-                    posDescription.format(VK_FORMAT_R8G8B8A8_SNORM);
-                    posDescription.offset(offset);
-
-                    offset += 4;
-                    break;
-
-                case PADDING:
+                }
+                case NORMAL -> posDescription.format(VK_FORMAT_R8G8B8A8_SNORM);
+                case PADDING -> {
                     //Do nothing as padding format (VK_FORMAT_R8) is not supported everywhere
-                    break;
-
-                case GENERIC:
-                    if(type == VertexFormatElement.Type.SHORT && elementCount == 1){
-                        posDescription.format(VK_FORMAT_R16_SINT);
-                        posDescription.offset(offset);
-
-                        offset += 2;
-                        break;
-                    }
-                    else if (type == VertexFormatElement.Type.INT && elementCount == 1) {
-                        posDescription.format(VK_FORMAT_R32_SINT);
-                        posDescription.offset(offset);
-
-                        offset += 4;
-                        break;
-                    }
-                    else {
-                        throw new RuntimeException(String.format("Unknown format: %s", usage));
-                    }
-
-
-                default:
-                    throw new RuntimeException(String.format("Unknown format: %s", usage));
+                }
+                case GENERIC -> {
+                   if(elementCount == 1) {
+                       switch (type) {
+                           case SHORT -> posDescription.format(VK_FORMAT_R16_SINT);
+                           case INT -> posDescription.format(VK_FORMAT_R32_SINT);
+                       }
+                   }
+                }
+                default -> throw new RuntimeException(String.format("Unknown format: %s", usage));
             }
 
-            posDescription.offset(((VertexFormatMixed)(vertexFormat)).getOffset(i));
+            posDescription.offset(offset);
+            offset+=formatElement.getByteSize();
         }
 
         return attributeDescriptions.rewind();
+    }
+
+    public void recompilePipeline()
+    {
+
+        if(this.graphicsPipelines.containsKey(this.state))
+        {
+            this.graphicsPipelines.replace(this.state, this.createGraphicsPipeline(this.state));
+        }
+//        PIPELINES.remove(this);
+//        Renderer.getInstance().removeUsedPipeline(this);
+//        this.graphicsPipelines.remove(this.state);
+//        PIPELINES.add(this);
+//        Renderer.getInstance().addUsedPipeline(this);
     }
 
     public void cleanUp() {
