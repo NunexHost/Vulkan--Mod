@@ -1,12 +1,10 @@
-package net.vulkanmod.render.chunk.build;
-
 import net.vulkanmod.render.chunk.util.Util;
-import net.vulkanmod.render.vertex.TerrainBufferBuilder;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
 
 public class UploadBuffer {
+    private static final int BUFFER_SIZE = 1024; // Adjust the buffer size as needed
 
     public final int indexCount;
     public final boolean autoIndices;
@@ -14,8 +12,10 @@ public class UploadBuffer {
     private final ByteBuffer vertexBuffer;
     private final ByteBuffer indexBuffer;
 
-    //debug
+    // debug
     private boolean released = false;
+
+    private static final ByteBuffer reusableBuffer = MemoryUtil.memAlloc(BUFFER_SIZE);
 
     public UploadBuffer(TerrainBufferBuilder.RenderedBuffer renderedBuffer) {
         TerrainBufferBuilder.DrawState drawState = renderedBuffer.drawState();
@@ -23,28 +23,50 @@ public class UploadBuffer {
         this.autoIndices = drawState.sequentialIndex();
         this.indexOnly = drawState.indexOnly();
 
-        if(!this.indexOnly)
-            this.vertexBuffer = Util.createCopy(renderedBuffer.vertexBuffer());
-        else
+        if (!this.indexOnly) {
+            this.vertexBuffer = reuseBuffer(renderedBuffer.vertexBuffer());
+        } else {
             this.vertexBuffer = null;
+        }
 
-        if(!drawState.sequentialIndex())
-            this.indexBuffer = Util.createCopy(renderedBuffer.indexBuffer());
-        else
+        if (!drawState.sequentialIndex()) {
+            this.indexBuffer = reuseBuffer(renderedBuffer.indexBuffer());
+        } else {
             this.indexBuffer = null;
+        }
     }
 
-    public int indexCount() { return indexCount; }
+    private ByteBuffer reuseBuffer(ByteBuffer sourceBuffer) {
+        reusableBuffer.clear();
+        reusableBuffer.put(sourceBuffer);
+        reusableBuffer.flip();
+        ByteBuffer targetBuffer = MemoryUtil.memAlloc(reusableBuffer.capacity());
+        targetBuffer.put(reusableBuffer);
+        targetBuffer.flip();
+        return targetBuffer;
+    }
 
-    public ByteBuffer getVertexBuffer() { return vertexBuffer; }
+    public int indexCount() {
+        return indexCount;
+    }
 
-    public ByteBuffer getIndexBuffer() { return indexBuffer; }
+    public ByteBuffer getVertexBuffer() {
+        return vertexBuffer;
+    }
+
+    public ByteBuffer getIndexBuffer() {
+        return indexBuffer;
+    }
 
     public void release() {
-        if(vertexBuffer != null)
-            MemoryUtil.memFree(vertexBuffer);
-        if(indexBuffer != null)
-            MemoryUtil.memFree(indexBuffer);
-        this.released = true;
+        if (!released) {
+            if (vertexBuffer != null) {
+                MemoryUtil.memFree(vertexBuffer);
+            }
+            if (indexBuffer != null) {
+                MemoryUtil.memFree(indexBuffer);
+            }
+            released = true;
+        }
     }
 }
